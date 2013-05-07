@@ -266,50 +266,6 @@ void classify_struct_example(PATTERN x, LABEL *y, STRUCTMODEL *sm, STRUCT_LEARN_
     free(binary[i]);
   }
   free(binary);
-
-
-  /*typedef Graph<int,int,int> GraphType;
-  GraphType *g = new GraphType( (x.n_pos+x.n_neg), (x.n_pos+x.n_neg)*(x.n_pos+x.n_neg-1)/2);
-  // create graph
-  for (i = 0; i < (x.n_pos+x.n_neg); i++){
-      g -> add_node();
-      // compute unary potential for ybar.labels[i] == 1 
-      unary_pos = sprod_ns(sm->w, x.x_is[i].phi1_pos);
-      unary_pos = (float)(-1*unary_pos)/(float)(x.n_pos+x.n_neg);
-      // compute unary potential for ybar.labels[i] == -1
-      unary_neg = sprod_ns(sm->w, x.x_is[i].phi1_neg);
-      unary_neg = (float)(-1*unary_neg)/(float)(x.n_pos+x.n_neg);
-      
-      g -> add_tweights( i, unary_pos, unary_neg );
-
-      for (j = (i+1); j < (x.n_pos+x.n_neg); j++){
-          temp_sub = sub_ss_abs(x.x_is[i].phi1_pos, x.x_is[j].phi1_pos);
-          temp_sub_shifted = create_svector_with_index(temp_sub->words, "", 1, sparm->phi1_size*2);
-          binary = sprod_ns(sm->w, temp_sub_shifted);
-          free_svector(temp_sub);
-          free_svector(temp_sub_shifted);
-
-          temp_sub = sub_ss_abs(x.x_is[i].phi2, x.x_is[j].phi2);
-          temp_sub_shifted = create_svector_with_index(temp_sub->words, "", 1, sparm->phi1_size*3);
-          binary += sprod_ns(sm->w, temp_sub_shifted);
-          free_svector(temp_sub);
-          free_svector(temp_sub_shifted);
-
-          binary = (float)(-1*binary)/(float)((x.n_pos+x.n_neg)^2);
-          g -> add_edge( i, j,  binary, binary );
-      }
-  }
-  int flow = g -> maxflow();
-  y->labels = (int *) malloc((x.n_pos+x.n_neg)*sizeof(int));
-  if(!y->labels) die("Memory error.");
-  for (i = 0; i < (x.n_pos+x.n_neg); i++){
-      if (g->what_segment(i) == GraphType::SOURCE){
-          y->labels[i] = -1;
-      }
-      else{
-          y->labels[i] = 1;
-      }
-  }*/
   
 	return;
 
@@ -380,56 +336,6 @@ void find_most_violated_constraint_marginrescaling(PATTERN x, LABEL y, LABEL *yb
     free(binary[i]);
   }
   free(binary);
-
-  /*typedef Graph<int,int,int> GraphType;
-  GraphType *g = new GraphType((x.n_pos+x.n_neg), (x.n_pos+x.n_neg)*(x.n_pos+x.n_neg-1)/2);
-  // create graph
-  for (i = 0; i < (x.n_pos+x.n_neg); i++){
-      g -> add_node();
-      // compute unary potential for ybar.labels[i] == 1 
-      unary_pos = sprod_ns(sm->w, x.x_is[i].phi1_pos);
-      unary_pos = (float)(-1*unary_pos)/(float)(x.n_pos+x.n_neg);
-      // compute unary potential for ybar.labels[i] == -1
-      unary_neg = sprod_ns(sm->w, x.x_is[i].phi1_neg);
-      unary_neg = (float)(-1*unary_neg)/(float)(x.n_pos+x.n_neg);
-      if(y.labels[i] == 1){
-          // add 1/n to 'ybar == -1' unary term
-          unary_neg -= (float)1/(float)(x.n_pos+x.n_neg);
-      }
-      else{
-          // add 1/n to 'ybar == 1' unary term
-          unary_pos -= (float)1/(float)(x.n_pos+x.n_neg);
-      }
-      g -> add_tweights( i, unary_pos, unary_neg );
-
-      for (j = (i+1); j < (x.n_pos+x.n_neg); j++){
-          temp_sub = sub_ss_abs(x.x_is[i].phi1_pos, x.x_is[j].phi1_pos);
-          temp_sub_shifted = create_svector_with_index(temp_sub->words, empty_string, 1, sparm->phi1_size*2);
-          binary = sprod_ns(sm->w, temp_sub_shifted);
-          free_svector(temp_sub);
-          free_svector(temp_sub_shifted);
-
-          temp_sub = sub_ss_abs(x.x_is[i].phi2, x.x_is[j].phi2);
-          temp_sub_shifted = create_svector_with_index(temp_sub->words, empty_string, 1, sparm->phi1_size*3);
-          binary += sprod_ns(sm->w, temp_sub_shifted);
-          free_svector(temp_sub);
-          free_svector(temp_sub_shifted);
-
-          binary = (float)(-1*binary)/(float)((x.n_pos+x.n_neg)^2);
-          g -> add_edge( i, j, binary, binary );
-      }
-  }
-  int flow = g -> maxflow();
-  ybar->labels = (int *) malloc((x.n_pos+x.n_neg)*sizeof(int));
-  if(!ybar->labels) die("Memory error.");
-  for (i = 0; i < (x.n_pos+x.n_neg); i++){
-      if (g->what_segment(i) == GraphType::SOURCE){
-          ybar->labels[i] = -1;
-      }
-      else{
-          ybar->labels[i] = 1;
-      }
-  }*/
 
 	return;
 
