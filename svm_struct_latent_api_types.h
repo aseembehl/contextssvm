@@ -23,9 +23,11 @@ typedef struct sub_pattern {
   char phi1_file_name[1000];
   char phi2_file_name[1000];
   int id;
-  SVECTOR *phi1_pos;
-  SVECTOR *phi1_neg;
+  SVECTOR *phi1;
   SVECTOR *phi2;
+  SVECTOR *phi1phi2_pos;
+  SVECTOR *phi1phi2_neg;
+
   
 } SUB_PATTERN;
 
