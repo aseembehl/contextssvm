@@ -358,7 +358,7 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 		G[size_active-1][size_active-1] += 1e-6;
 
 	   	/* solve QP to update alpha */
-		r = mosek_qp_optimize(G, delta, alpha, (long) size_active, C, &cur_obj, dXc, sparm->phi1_size*2, (sparm->phi1_size+sparm->phi2_size));
+		r = mosek_qp_optimize(G, delta, alpha, (long) size_active, C, &cur_obj, dXc, (sparm->phi1_size+sparm->phi2_size)*2, (sparm->phi1_size+sparm->phi2_size));
 		//r = mosek_qp_optimize(G, delta, alpha, (long) size_active, C, &cur_obj);
 	    
 		if(r >= 1293 && r <= 1296)

@@ -27,6 +27,7 @@ typedef struct sub_pattern {
   SVECTOR *phi2;
   SVECTOR *phi1phi2_pos;
   SVECTOR *phi1phi2_neg;
+  SVECTOR *phi1phi2_shift;
 
   
 } SUB_PATTERN;

@@ -58,6 +58,47 @@ SVECTOR *read_sparse_vector(char *file_name, int object_id, STRUCT_LEARN_PARM *s
     }
     fclose(fp);
 
+    if(words[length-1].wnum) {
+      length++;
+      words = (WORD *) realloc(words,length*sizeof(WORD));
+      words[length-1].wnum = 0;
+      words[length-1].weight = 0.0;
+    }
+
+  SVECTOR *fvec = create_svector(words,"",1);
+  free(words);
+
+  return fvec;
+}
+
+SVECTOR *read_sparse_phi2(char *file_name, STRUCT_LEARN_PARM *sparm){
+    
+    int scanned;
+    WORD *words = NULL;
+    char feature_file[1000];
+    sprintf(feature_file, "%s", file_name);
+    FILE *fp = fopen(feature_file, "r");
+    
+    int length = 0;
+    while(!feof(fp)){
+        length++;
+        words = (WORD *) realloc(words, length*sizeof(WORD));
+        if(!words) die("Memory error."); 
+        scanned = fscanf(fp, " %d:%f", &words[length-1].wnum, &words[length-1].weight);
+        if(scanned < 2) {
+            words[length-1].wnum = 0;
+            words[length-1].weight = 0.0;
+        }
+    }
+    fclose(fp);
+
+    if(words[length-1].wnum) {
+      length++;
+      words = (WORD *) realloc(words,length*sizeof(WORD));
+      words[length-1].wnum = 0;
+      words[length-1].weight = 0.0;
+    }
+
   SVECTOR *fvec = create_svector(words,"",1);
   free(words);
 
@@ -106,11 +147,12 @@ SAMPLE read_struct_examples(char *file, STRUCT_LEARN_PARM *sparm) {
       fscanf(fp, "%d", &sample.examples[0].y.labels[i]);
 
       sample.examples[0].x.x_is[i].phi1 = read_sparse_vector(sample.examples[0].x.x_is[i].phi1_file_name, sample.examples[0].x.x_is[i].id, sparm);
-      sample.examples[0].x.x_is[i].phi2 = read_sparse_vector(sample.examples[0].x.x_is[i].phi2_file_name, sample.examples[0].x.x_is[i].id, sparm);
+      sample.examples[0].x.x_is[i].phi2 = read_sparse_phi2(sample.examples[0].x.x_is[i].phi2_file_name, sparm);
       temp = create_svector_with_index(sample.examples[0].x.x_is[i].phi2->words, "", 1, sparm->phi1_size);
       sample.examples[0].x.x_is[i].phi1phi2_pos = add_ss(sample.examples[0].x.x_is[i].phi1, temp);
       free_svector(temp);
       sample.examples[0].x.x_is[i].phi1phi2_neg = create_svector_with_index(sample.examples[0].x.x_is[i].phi1phi2_pos->words, "", 1, (sparm->phi1_size+sparm->phi2_size));
+      sample.examples[0].x.x_is[i].phi1phi2_shift = create_svector_with_index(sample.examples[0].x.x_is[i].phi1phi2_pos->words, "", 1, (sparm->phi1_size+sparm->phi2_size)*2);
 
       if(sample.examples[0].y.labels[i] == 1) {
           sample.examples[0].x.n_pos++;
@@ -210,7 +252,7 @@ void classify_struct_example(PATTERN x, LABEL *y, STRUCTMODEL *sm, STRUCT_LEARN_
 */
   int i,j;
 
-  SVECTOR *temp_sub, *temp_sub_shifted=NULL;
+  SVECTOR *temp_sub=NULL;
 
   double *unary_pos = (double*)malloc((x.n_pos+x.n_neg)*sizeof(double));
   double *unary_neg =  (double*)malloc((x.n_pos+x.n_neg)*sizeof(double));
@@ -230,11 +272,11 @@ void classify_struct_example(PATTERN x, LABEL *y, STRUCTMODEL *sm, STRUCT_LEARN_
         unary_neg[i] = (float)(-1*unary_neg[i])/(float)(x.n_pos+x.n_neg);
       }
       for (j = (i+1); j < (x.n_pos+x.n_neg); j++){
-          temp_sub = sub_ss_abs(x.x_is[i].phi1phi2_pos, x.x_is[j].phi1phi2_pos);
-          temp_sub_shifted = create_svector_with_index(temp_sub->words, "", 1, (sparm->phi1_size+sparm->phi2_size)*2);
-          binary[i][j] = sprod_ns(sm->w, temp_sub_shifted);
+          temp_sub = sub_ss_abs(x.x_is[i].phi1phi2_shift, x.x_is[j].phi1phi2_shift);
+          //temp_sub_shifted = create_svector_with_index(temp_sub->words, "", 1, (sparm->phi1_size+sparm->phi2_size)*2);
+          binary[i][j] = sprod_ns(sm->w, temp_sub);
           free_svector(temp_sub);
-          free_svector(temp_sub_shifted);
+          //free_svector(temp_sub_shifted);
 
           binary[i][j] = (double)(-1*binary[i][j])/(double)((x.n_pos+x.n_neg)*(x.n_pos+x.n_neg));
       }
@@ -262,7 +304,7 @@ void find_most_violated_constraint_marginrescaling(PATTERN x, LABEL y, LABEL *yb
 */
   int i, j;
 
-  SVECTOR *temp_sub, *temp_sub_shifted=NULL;
+  SVECTOR *temp_sub=NULL;
 
   double *unary_pos = (double*)malloc((x.n_pos+x.n_neg)*sizeof(double));
   double *unary_neg =  (double*)malloc((x.n_pos+x.n_neg)*sizeof(double));
@@ -292,11 +334,11 @@ void find_most_violated_constraint_marginrescaling(PATTERN x, LABEL y, LABEL *yb
       }
 
       for (j = (i+1); j < (x.n_pos+x.n_neg); j++){
-          temp_sub = sub_ss_abs(x.x_is[i].phi1phi2_pos, x.x_is[j].phi1phi2_pos);
-          temp_sub_shifted = create_svector_with_index(temp_sub->words, "", 1, (sparm->phi1_size+sparm->phi2_size)*2);
-          binary[i][j] = sprod_ns(sm->w, temp_sub_shifted);
+          temp_sub = sub_ss_abs(x.x_is[i].phi1phi2_shift, x.x_is[j].phi1phi2_shift);
+          //temp_sub_shifted = create_svector_with_index(temp_sub->words, "", 1, (sparm->phi1_size+sparm->phi2_size)*2);
+          binary[i][j] = sprod_ns(sm->w, temp_sub);
           free_svector(temp_sub);
-          free_svector(temp_sub_shifted);
+          //free_svector(temp_sub_shifted);
 
           if(binary[i][j] != 0){
               binary[i][j] = (double)(-1*binary[i][j])/(double)((x.n_pos+x.n_neg)*(x.n_pos+x.n_neg));
