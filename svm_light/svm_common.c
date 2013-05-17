@@ -109,6 +109,17 @@ double single_kernel(KERNEL_PARM *kernel_parm, SVECTOR *a, SVECTOR *b)
   }
 }
 
+double returnWeightAtIndex(WORD *words, int index){
+  long fnum;
+  while(words[fnum].wnum && words[fnum].wnum <= index){
+    if (words[fnum].wnum == index){
+      return words[fnum].weight;
+    }
+    fnum++;
+  }
+  return 0;
+}
+
 
 SVECTOR *create_svector_with_index(WORD *words,char *userdefined,double factor, int startIndex)
 {

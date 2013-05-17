@@ -40,7 +40,7 @@ int main(int argc, char* argv[]) {
 
   /* read input parameters */
   read_input_parameters(argc,argv,testfile,modelfile,labelfile,&sparm);
-	flabel = fopen(labelfile,"w");
+	//flabel = fopen(labelfile,"w");
 
   /* read model file */
   printf("Reading model..."); fflush(stdout);
@@ -62,15 +62,15 @@ int main(int argc, char* argv[]) {
     avgloss += l;
     if (l==0) correct++;
 
-		print_label(y,flabel);
-		fprintf(flabel,"\n"); fflush(flabel);
+		//print_label(y,flabel);
+		//fprintf(flabel,"\n"); fflush(flabel);
 
     free_label(y);
   }
-	fclose(flabel);
+	//fclose(flabel);
 
   printf("Average loss on test set: %.4f\n", avgloss/testsample.n);
-  printf("Zero/one error on test set: %.4f\n", 1.0 - ((float) correct)/testsample.n);
+  //printf("Zero/one error on test set: %.4f\n", 1.0 - ((float) correct)/testsample.n);
 
   free_struct_sample(testsample);
   free_struct_model(model,&sparm);

@@ -285,6 +285,7 @@ double classify_example_linear(MODEL *, DOC *);
 double kernel(KERNEL_PARM *, DOC *, DOC *); 
 double single_kernel(KERNEL_PARM *, SVECTOR *, SVECTOR *); 
 double custom_kernel(KERNEL_PARM *, SVECTOR *, SVECTOR *); 
+double returnWeightAtIndex(WORD *, int);
 SVECTOR *create_svector_with_index(WORD *,char *,double, int);
 SVECTOR *create_svector(WORD *, char *, double);
 SVECTOR *create_svector_shallow(WORD *, char *, double);

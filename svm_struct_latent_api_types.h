@@ -101,5 +101,8 @@ typedef struct struct_learn_parm {
   /* add your own variables */
           int phi1_size;
           int phi2_size;
+
+          double gram_regularization;
+
 } STRUCT_LEARN_PARM;
 

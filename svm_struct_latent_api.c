@@ -278,7 +278,7 @@ void classify_struct_example(PATTERN x, LABEL *y, STRUCTMODEL *sm, STRUCT_LEARN_
           free_svector(temp_sub);
           //free_svector(temp_sub_shifted);
 
-          binary[i][j] = (double)(-1*binary[i][j])/(double)((x.n_pos+x.n_neg)*(x.n_pos+x.n_neg));
+          binary[i][j] = (double)(-2*binary[i][j])/(double)((x.n_pos+x.n_neg)*(x.n_pos+x.n_neg-1));
       }
   }
 
@@ -341,7 +341,7 @@ void find_most_violated_constraint_marginrescaling(PATTERN x, LABEL y, LABEL *yb
           //free_svector(temp_sub_shifted);
 
           if(binary[i][j] != 0){
-              binary[i][j] = (double)(-1*binary[i][j])/(double)((x.n_pos+x.n_neg)*(x.n_pos+x.n_neg));
+              binary[i][j] = (double)(-2*binary[i][j])/(double)((x.n_pos+x.n_neg)*(x.n_pos+x.n_neg-1));
           }
       }
   }
@@ -484,6 +484,9 @@ void parse_struct_parameters(STRUCT_LEARN_PARM *sparm) {
   /* set default */
   sparm->phi1_size=24004;
   sparm->phi2_size=512;
+
+  //sparm->phi1_size=3;
+  //sparm->phi2_size=2;
   
   for (i=0;(i<sparm->custom_argc)&&((sparm->custom_argv[i])[0]=='-');i++) {
     switch ((sparm->custom_argv[i])[2]) {

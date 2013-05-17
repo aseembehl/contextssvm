@@ -38,15 +38,15 @@
 #define UPDATE_BOUND 3
 #define MAX_CURRICULUM_ITER 10
 
-
+#define EQUALITY_EPSILON 1e-6
 
 #define MAX(x,y) ((x) < (y) ? (y) : (x))
 #define MIN(x,y) ((x) > (y) ? (y) : (x))
 
 #define DEBUG_LEVEL 0
 
- int mosek_qp_optimize(double**, double*, double*, long, double, double*, DOC **, int, int);
- //int mosek_qp_optimize(double**, double*, double*, long, double, double*);
+ //int mosek_qp_optimize(double**, double*, double*, long, double, double*, DOC **, int, int);
+ int mosek_qp_optimize(double**,double**, double*, double*, long, long, double, double*);
 
 void my_read_input_parameters(int argc, char* argv[], char *trainfile, char *modelfile, 
 			      LEARN_PARM *learn_parm, KERNEL_PARM *kernel_parm, STRUCT_LEARN_PARM *struct_parm, 
@@ -251,7 +251,7 @@ SVECTOR* find_cutting_plane(EXAMPLE *ex, SVECTOR **fycache, double *margin, long
   return(fvec); 
 }
 
-double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double epsilon, SVECTOR **fycache, EXAMPLE *ex, 
+void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double epsilon, SVECTOR **fycache, EXAMPLE *ex, 
 															STRUCTMODEL *sm, STRUCT_LEARN_PARM *sparm, int *valid_examples) {
   long i,j;
   double *alpha;
@@ -267,6 +267,8 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 	int mv_iter;
 	int *idle = NULL;
 	double **G = NULL;
+	double **G2 = NULL;
+	double **qmatrix = NULL;
 	SVECTOR *f;
 	int r;
 
@@ -309,8 +311,10 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
   dXc = NULL;
   delta = NULL;
 
-  printf("Running structural SVM solver: "); fflush(stdout); 
+  /*qmatrix = (double **) malloc(sizeof(double *)*10);
+  assert(qmatrix!=NULL);*/
 
+  printf("Running structural SVM solver: "); fflush(stdout); 
 	new_constraint = find_cutting_plane(ex, fycache, &margin, m, sm, sparm, valid_examples);
  	value = margin - sprod_ns(w, new_constraint);
 	while((value>threshold+epsilon)&&(iter<MAX_ITER)) {
@@ -328,17 +332,32 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 	   	dXc[size_active-1]->slackid = 1; // only one common slackid (one-slack)
 	   	dXc[size_active-1]->costfactor = 1.0;
 
+
 	   	delta = (double*)realloc(delta, sizeof(double)*size_active);
 	   	assert(delta!=NULL);
 	   	delta[size_active-1] = margin;
 
-	   	alpha = (double*)realloc(alpha, sizeof(double)*size_active);
+	   	/*alpha = (double*)malloc(sizeof(double)*(size_active+(sparm->phi1_size+sparm->phi2_size)));
+	   	assert(alpha!=NULL);
+   		for(j=0; j<(sparm->phi1_size+sparm->phi2_size)+size_active; j++){
+   			alpha[j] = 0.0;
+   		}*/
+   		alpha = (double*)realloc(alpha, sizeof(double)*(size_active+(sparm->phi1_size+sparm->phi2_size)));
 	   	assert(alpha!=NULL);
 	   	alpha[size_active-1] = 0.0;
 
 		idle = (int *) realloc(idle, sizeof(int)*size_active);
 		assert(idle!=NULL);
 		idle[size_active-1] = 0;
+
+		
+		qmatrix = (double **) realloc(qmatrix, sizeof(double *)*size_active);
+  		assert(qmatrix!=NULL);
+
+		qmatrix[size_active-1] = malloc(sizeof(double)*(sparm->phi1_size+sparm->phi2_size));
+		for(j = 0; j < (sparm->phi1_size+sparm->phi2_size); j++){
+			qmatrix[size_active-1][j] = (-1)*returnWeightAtIndex(dXc[size_active-1]->fvec->words, ((sparm->phi1_size+sparm->phi2_size)*2+j+1));
+		}
 
 		/* update Gram matrix */
 		G = (double **) realloc(G, sizeof(double *)*size_active);
@@ -348,8 +367,10 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 			G[j] = (double *) realloc(G[j], sizeof(double)*size_active);
 			assert(G[j]!=NULL);
 		}
+
 		for(j = 0; j < size_active-1; j++) {
 			G[size_active-1][j] = sprod_ss(dXc[size_active-1]->fvec, dXc[j]->fvec);
+			G[size_active-1][j] = G[size_active-1][j]/2;
 			G[j][size_active-1]  = G[size_active-1][j];
 		}
 		G[size_active-1][size_active-1] = sprod_ss(dXc[size_active-1]->fvec,dXc[size_active-1]->fvec);
@@ -358,13 +379,20 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 		G[size_active-1][size_active-1] += 1e-6;
 
 	   	/* solve QP to update alpha */
-		r = mosek_qp_optimize(G, delta, alpha, (long) size_active, C, &cur_obj, dXc, (sparm->phi1_size+sparm->phi2_size)*2, (sparm->phi1_size+sparm->phi2_size));
-		//r = mosek_qp_optimize(G, delta, alpha, (long) size_active, C, &cur_obj);
+		//r = mosek_qp_optimize(G, delta, alpha, (long) size_active, C, &cur_obj, dXc, (sparm->phi1_size+sparm->phi2_size)*2, (sparm->phi1_size+sparm->phi2_size));
+		r = mosek_qp_optimize(G, qmatrix, delta, alpha, (long) size_active, (long) (sparm->phi1_size+sparm->phi2_size), C, &cur_obj);
 	    
 		if(r >= 1293 && r <= 1296)
 		{
-			printf("r:%d. G might not be psd due to numerical errors.\n",r);
-			exit(1);
+			//printf("r:%d. G might not be psd due to numerical errors.\n",r);
+			//exit(1);
+			while(r==1295) {
+				for(i=0;i<size_active;i++) {
+					G[i][i] += 10*sparm->gram_regularization-sparm->gram_regularization;
+				}
+				sparm->gram_regularization *= 10;
+				r = mosek_qp_optimize(G, qmatrix, delta, alpha, (long) size_active, (long) (sparm->phi1_size+sparm->phi2_size), C, &cur_obj);
+			}
 		}
 		else if(r)
 		{
@@ -381,6 +409,17 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 			else
 				idle[j]++;
 	   	}
+	   	for(j=0; j<(sparm->phi1_size+sparm->phi2_size);j++){
+	   		if (alpha[size_active+j] > EQUALITY_EPSILON){
+	   			w[j+1+(sparm->phi1_size+sparm->phi2_size)*2] = w[j+1+(sparm->phi1_size+sparm->phi2_size)*2] - alpha[size_active+j];
+	   		}	   		
+	   	}
+
+	   	for(j=1; j<=(sparm->phi1_size+sparm->phi2_size)*3;j++){
+	   		if((w[j]<EQUALITY_EPSILON) && (w[j]>(-1*EQUALITY_EPSILON))){
+	   			w[j] = 0;
+	   		}
+	   	}	   	
 
 		cur_slack = (double *) realloc(cur_slack,sizeof(double)*size_active);
 
@@ -421,9 +460,12 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 			size_active = resize_cleanup(size_active, &idle, &alpha, &delta, &dXc, &G, &mv_iter);
 		}
 
+		free(alpha);
+		alpha=NULL;
+
  	} // end cutting plane while loop 
 
-	primal_obj = current_obj_val(ex, fycache, m, sm, sparm, C, valid_examples);
+	//primal_obj = current_obj_val(ex, fycache, m, sm, sparm, C, valid_examples);
 
   printf(" Inner loop optimization finished.\n"); fflush(stdout); 
       
@@ -441,7 +483,8 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 	free(idle);
   if (svm_model!=NULL) free_model(svm_model,0);
 
-  return(primal_obj);
+  //return(primal_obj);
+  return;
 }
 
 int check_acs_convergence(int *prev_valid_examples, int *valid_examples, long m)
@@ -523,7 +566,7 @@ int update_valid_examples(double *w, long m, double C, SVECTOR **fycache, EXAMPL
 	return nValid;
 }
 
-double alternate_convex_search(double *w, long m, int MAX_ITER, double C, double epsilon, SVECTOR **fycache, EXAMPLE *ex, 
+void alternate_convex_search(double *w, long m, int MAX_ITER, double C, double epsilon, SVECTOR **fycache, EXAMPLE *ex, 
                                STRUCTMODEL *sm, STRUCT_LEARN_PARM *sparm, int *valid_examples, double spl_weight) {
 
 	long i;
@@ -536,7 +579,7 @@ double alternate_convex_search(double *w, long m, int MAX_ITER, double C, double
 	for (i=0;i<sm->sizePsi+1;i++)
 		best_w[i] = w[i];
 	nValid = update_valid_examples(w, m, C, fycache, ex, sm, sparm, valid_examples, spl_weight);
-	last_relaxed_primal_obj = current_obj_val(ex, fycache, m, sm, sparm, C, valid_examples);
+	//last_relaxed_primal_obj = current_obj_val(ex, fycache, m, sm, sparm, C, valid_examples);
 	if(nValid < m)
 		last_relaxed_primal_obj += (double)(m-nValid)/((double)spl_weight);
 
@@ -552,11 +595,13 @@ double alternate_convex_search(double *w, long m, int MAX_ITER, double C, double
 			break;
 		for (i=0;i<sm->sizePsi+1;i++)
 			w[i] = 0.0;
-		relaxed_primal_obj = cutting_plane_algorithm(w, m, MAX_ITER, C, epsilon, fycache, ex, sm, sparm, valid_examples);
+		
+		cutting_plane_algorithm(w, m, MAX_ITER, C, epsilon, fycache, ex, sm, sparm, valid_examples);
+		/*relaxed_primal_obj = cutting_plane_algorithm(w, m, MAX_ITER, C, epsilon, fycache, ex, sm, sparm, valid_examples);
 		if(nValid < m)
 			relaxed_primal_obj += (double)(m-nValid)/((double)spl_weight);
 		decrement = last_relaxed_primal_obj-relaxed_primal_obj;
-    printf("relaxed primal objective: %.4f\n", relaxed_primal_obj);
+    	printf("relaxed primal objective: %.4f\n", relaxed_primal_obj);
 		if (iter) {
     	printf("decrement: %.4f\n", decrement); fflush(stdout);
 		}
@@ -571,7 +616,10 @@ double alternate_convex_search(double *w, long m, int MAX_ITER, double C, double
 		if (decrement <= C*epsilon) {
 			break;
 		}
-		last_relaxed_primal_obj = relaxed_primal_obj;
+		last_relaxed_primal_obj = relaxed_primal_obj;*/
+		for (i=0;i<sm->sizePsi+1;i++) {
+				best_w[i] = w[i];
+		}
 		for (i=0;i<m;i++) {
 			prev_valid_examples[i] = valid_examples[i];
 		}
@@ -587,13 +635,15 @@ double alternate_convex_search(double *w, long m, int MAX_ITER, double C, double
 		}
 	}
 
-	double primal_obj;
-	primal_obj = current_obj_val(ex, fycache, m, sm, sparm, C, prev_valid_examples);
+	//double primal_obj;
+	//primal_obj = current_obj_val(ex, fycache, m, sm, sparm, C, prev_valid_examples);
 	
 	free(prev_valid_examples);
 	free(best_w);
 
-	return(primal_obj);
+	return;
+	//return(relaxed_primal_obj);
+	//return(primal_obj);
 }
 
 
@@ -755,7 +805,8 @@ int main(int argc, char* argv[]) {
 		}
 		int initIter;
 		for (initIter=0;initIter<2;initIter++) {
-			primal_obj = cutting_plane_algorithm(w, m, MAX_ITER, C, epsilon, fycache, ex, &sm, &sparm, valid_examples);
+			//primal_obj = cutting_plane_algorithm(w, m, MAX_ITER, C, epsilon, fycache, ex, &sm, &sparm, valid_examples);
+			cutting_plane_algorithm(w, m, MAX_ITER, C, epsilon, fycache, ex, &sm, &sparm, valid_examples);
 		    for (i=0;i<m;i++) {
 		  	    free_svector(fycache[i]);
 		    	fy = psi(ex[i].x, ex[i].y, &sm, &sparm);
@@ -778,7 +829,8 @@ int main(int argc, char* argv[]) {
 	spl_weight = init_spl_weight;
 
 	/* solve biconvex self-paced learning problem */
-	primal_obj = alternate_convex_search(w, m, MAX_ITER, C, epsilon, fycache, ex, &sm, &sparm, valid_examples, spl_weight);
+	//primal_obj = alternate_convex_search(w, m, MAX_ITER, C, epsilon, fycache, ex, &sm, &sparm, valid_examples, spl_weight);
+	alternate_convex_search(w, m, MAX_ITER, C, epsilon, fycache, ex, &sm, &sparm, valid_examples, spl_weight);
 	int nValid = 0;
 	for (i=0;i<m;i++) {
 		if(valid_examples[i]) {
@@ -840,6 +892,8 @@ void my_read_input_parameters(int argc, char *argv[], char *trainfile, char* mod
 	/* default: no self-paced learning */
 	*init_spl_weight = 0.0;
 	*spl_factor = 1.3;
+
+	struct_parm->gram_regularization = 1E-6;
 
   struct_parm->custom_argc=0;
 
