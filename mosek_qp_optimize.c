@@ -18,7 +18,7 @@ double limitprecision(double input){
   return output;
 }
 
-int mosek_qp_optimize(double** G, double** qmatrix, double* delta, double* alpha, long k, long n_w2, double C, double *dual_obj) {
+int mosek_qp_optimize(double** G, double** qmatrix, double* delta, double* alpha, long k, long n_w2, double C, double *dual_obj, double gram_regularization, double last_gram_regularization) {
   long i,j;
   long t=0;
   double *c=NULL;
@@ -168,7 +168,7 @@ int mosek_qp_optimize(double** G, double** qmatrix, double* delta, double* alpha
           assert(qval!=NULL); 
           qsubi[t-1] = k+i;
           qsubj[t-1] = k+i;
-          qval[t-1] = 1; 
+          qval[t-1] = 1 + gram_regularization - last_gram_regularization; 
         }
 	    
 	       r = MSK_putqobj(task, t, qsubi,qsubj,qval);

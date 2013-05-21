@@ -394,6 +394,93 @@ SVECTOR* multadd_ss(SVECTOR *a, SVECTOR *b, double factor)
     return(vec);
 }
 
+SVECTOR* multadd_ss_sq(SVECTOR *a, SVECTOR *b, double factor) 
+     /* compute a+factor*b of two sparse vectors */
+     /* Note: SVECTOR lists are not followed, but only the first
+  SVECTOR is used */
+{
+    SVECTOR *vec;
+    register WORD *sum,*sumi;
+    register WORD *ai,*bj;
+    long veclength;
+  
+    ai=a->words;
+    bj=b->words;
+    veclength=0;
+    while (ai->wnum && bj->wnum) {
+      if(ai->wnum > bj->wnum) {
+        veclength++;
+        bj++;
+      }
+      else if (ai->wnum < bj->wnum) {
+        veclength++;
+        ai++;
+      }
+      else {
+        veclength++;
+        ai++;
+        bj++;
+      }
+    }
+    while (bj->wnum) {
+      veclength++;
+      bj++;
+    }
+    while (ai->wnum) {
+      veclength++;
+      ai++;
+    }
+    veclength++;
+
+    sum=(WORD *)my_malloc(sizeof(WORD)*veclength);
+    sumi=sum;
+    ai=a->words;
+    bj=b->words;
+    while (ai->wnum && bj->wnum) {
+      if(ai->wnum > bj->wnum) {
+        (*sumi)=(*bj);
+        sumi->weight*=factor;
+        sumi->weight = sumi->weight*sumi->weight;
+        sumi++;
+        bj++;
+      }
+      else if (ai->wnum < bj->wnum) {
+        (*sumi)=(*ai);
+        sumi->weight = sumi->weight*sumi->weight;
+        sumi++;
+        ai++;
+      }
+      else {
+        (*sumi)=(*ai);
+        sumi->weight+=factor*bj->weight;
+        sumi->weight = sumi->weight*sumi->weight;
+        if(sumi->weight != 0)
+          sumi++;
+        ai++;
+        bj++;
+      }
+    }
+    while (bj->wnum) {
+      (*sumi)=(*bj);
+      sumi->weight*=factor;
+      sumi->weight = sumi->weight*sumi->weight;
+      sumi++;
+      bj++;
+    }
+    while (ai->wnum) {
+      (*sumi)=(*ai);
+      sumi->weight = sumi->weight*sumi->weight;
+      sumi++;
+      ai++;
+    }
+    sumi->wnum=0;
+
+    vec=create_svector(sum,"",1.0);
+    free(sum);
+
+    return(vec);
+}
+
 SVECTOR* multadd_ss_abs(SVECTOR *a, SVECTOR *b, double factor) 
      /* compute a+factor*b of two sparse vectors */
      /* Note: SVECTOR lists are not followed, but only the first
@@ -479,6 +566,14 @@ SVECTOR* multadd_ss_abs(SVECTOR *a, SVECTOR *b, double factor)
     free(sum);
 
     return(vec);
+}
+
+SVECTOR* sub_ss_sq(SVECTOR *a, SVECTOR *b) 
+     /* compute the difference a-b of two sparse vectors */
+     /* Note: SVECTOR lists are not followed, but only the first
+  SVECTOR is used */
+{
+  return(multadd_ss_sq(a,b,-1.0));
 }
 
 SVECTOR* sub_ss_abs(SVECTOR *a, SVECTOR *b) 

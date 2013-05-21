@@ -40,6 +40,9 @@ typedef struct pattern {
     SUB_PATTERN *x_is;
     int n_pos;
     int n_neg;
+
+    int **neighbors;
+    int n_neighbors;
 } PATTERN;
 
 typedef struct label {
@@ -103,6 +106,7 @@ typedef struct struct_learn_parm {
           int phi2_size;
 
           double gram_regularization;
+          double pairwise_threshold;
 
 } STRUCT_LEARN_PARM;
 

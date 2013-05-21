@@ -22,7 +22,7 @@
 
 #include <errno.h>
 
-#include "maxflowwrap.hpp"
+#include "maxflow-v3.02.src/maxflowwrap.hpp"
 
 
 #define MAX_INPUT_LINE_LENGTH 10000
@@ -113,7 +113,10 @@ SAMPLE read_struct_examples(char *file, STRUCT_LEARN_PARM *sparm) {
 */
   SAMPLE sample;
 
-  int i;
+  int i, j;
+  SVECTOR *temp_sub=NULL;
+  double vecDistance;
+  long n_neighbors=0;
 
   // open the file containing candidate bounding box dimensions/labels/featurePath and image label
   FILE *fp = fopen(file, "r");
@@ -164,6 +167,26 @@ SAMPLE read_struct_examples(char *file, STRUCT_LEARN_PARM *sparm) {
   sample.examples[0].y.n_pos = sample.examples[0].x.n_pos;
   sample.examples[0].y.n_neg = sample.examples[0].x.n_neg;
 
+  sample.examples[0].x.neighbors = (int **) malloc(sample.examples[0].n_imgs*sizeof(int*));
+  sample.examples[0].x.n_neighbors=0;
+  for (i = 0; i < sample.examples[0].n_imgs; i++){
+      sample.examples[0].x.neighbors[i] = (int *) malloc(sample.examples[0].n_imgs*sizeof(int));
+      for (j=(i+1); j < sample.examples[0].n_imgs; j++){
+          temp_sub = sub_ss(sample.examples[0].x.x_is[i].phi2, sample.examples[0].x.x_is[j].phi2);
+          vecDistance = sprod_ss(temp_sub, temp_sub);
+          free_svector(temp_sub);
+          if(vecDistance < sparm->pairwise_threshold){
+            sample.examples[0].x.neighbors[i][j]=1;
+            sample.examples[0].x.n_neighbors++;
+          }
+          else{
+            sample.examples[0].x.neighbors[i][j]=0;
+          }
+      }
+  }
+  printf("No of neighbors = %d\n",sample.examples[0].x.n_neighbors);
+  fflush(stdout);
+
   return(sample);
 }
 
@@ -186,8 +209,11 @@ SVECTOR *psi(PATTERN x, LABEL y, STRUCTMODEL *sm, STRUCT_LEARN_PARM *sparm) {
   sparse vector SVECTOR in SVM^light format. The dimension of the 
   feature vector returned has to agree with the dimension in sm->sizePsi. 
 */
-  SVECTOR *fvec, *psi1, *psi2=NULL;
-  SVECTOR *temp_psi, *temp_sub=NULL;
+  SVECTOR *fvec=NULL; 
+  SVECTOR *psi1=NULL; 
+  SVECTOR *psi2=NULL;
+  SVECTOR *temp_psi=NULL; 
+  SVECTOR *temp_sub=NULL;
 
 
   WORD *words = NULL;
@@ -212,13 +238,15 @@ SVECTOR *psi(PATTERN x, LABEL y, STRUCTMODEL *sm, STRUCT_LEARN_PARM *sparm) {
       free_svector(psi1);
       psi1 = temp_psi;
 
-      for (j= 0; j < (x.n_pos+x.n_neg); j++){
-          if(y.labels[i] != y.labels[j]){
-              temp_sub = sub_ss_abs(x.x_is[i].phi1phi2_pos, x.x_is[j].phi1phi2_pos);
-              temp_psi = add_ss(psi2, temp_sub);
-              free_svector(temp_sub);
-              free_svector(psi2);
-              psi2 = temp_psi;
+      for (j=(i+1); j < (x.n_pos+x.n_neg); j++){
+          if(x.neighbors[i][j]){
+              if(y.labels[i] != y.labels[j]){
+                  temp_sub = sub_ss_sq(x.x_is[i].phi1phi2_pos, x.x_is[j].phi1phi2_pos);
+                  temp_psi = add_ss(psi2, temp_sub);
+                  free_svector(temp_sub);
+                  free_svector(psi2);
+                  psi2 = temp_psi;
+              }     
           }
       }
   }
@@ -229,9 +257,11 @@ SVECTOR *psi(PATTERN x, LABEL y, STRUCTMODEL *sm, STRUCT_LEARN_PARM *sparm) {
   psi1 = temp_psi;
   
   // scale w2 by 1/n^2
-  temp_psi = smult_s(psi2, (float)1/(float)((x.n_pos+x.n_neg)*(x.n_pos+x.n_neg)));
-  free_svector(psi2);
-  psi2 = temp_psi;
+  if (x.n_neighbors){
+    temp_psi = smult_s(psi2, (float)1/(float)x.n_neighbors);
+    free_svector(psi2);
+    psi2 = temp_psi; 
+  }  
   
   // concatenate psi1, psi2
   temp_psi = create_svector_with_index(psi2->words, "", 1, (sparm->phi1_size+sparm->phi2_size)*2);
@@ -272,14 +302,26 @@ void classify_struct_example(PATTERN x, LABEL *y, STRUCTMODEL *sm, STRUCT_LEARN_
         unary_neg[i] = (float)(-1*unary_neg[i])/(float)(x.n_pos+x.n_neg);
       }
       for (j = (i+1); j < (x.n_pos+x.n_neg); j++){
-          temp_sub = sub_ss_abs(x.x_is[i].phi1phi2_shift, x.x_is[j].phi1phi2_shift);
-          //temp_sub_shifted = create_svector_with_index(temp_sub->words, "", 1, (sparm->phi1_size+sparm->phi2_size)*2);
-          binary[i][j] = sprod_ns(sm->w, temp_sub);
-          free_svector(temp_sub);
-          //free_svector(temp_sub_shifted);
-
-          binary[i][j] = (double)(-2*binary[i][j])/(double)((x.n_pos+x.n_neg)*(x.n_pos+x.n_neg-1));
+          if(x.neighbors[i][j]){
+              temp_sub = sub_ss_sq(x.x_is[i].phi1phi2_shift, x.x_is[j].phi1phi2_shift);
+              binary[i][j] = sprod_ns(sm->w, temp_sub);
+              assert(binary[i][j] <= 0);
+              free_svector(temp_sub);
+          }
+          else{
+              binary[i][j] = 0;
+          }
       }
+  }
+
+  if (x.n_neighbors){
+    for (i = 0; i < (x.n_pos+x.n_neg); i++){
+      for (j = (i+1); j < (x.n_pos+x.n_neg); j++){
+          if(binary[i][j] != 0){
+            binary[i][j] = (double)(-1*binary[i][j])/(double)x.n_neighbors;
+          }
+      }
+    }
   }
 
   y->labels = maxflowwrapper(unary_pos, unary_neg, binary, x.n_pos, x.n_neg);
@@ -334,16 +376,26 @@ void find_most_violated_constraint_marginrescaling(PATTERN x, LABEL y, LABEL *yb
       }
 
       for (j = (i+1); j < (x.n_pos+x.n_neg); j++){
-          temp_sub = sub_ss_abs(x.x_is[i].phi1phi2_shift, x.x_is[j].phi1phi2_shift);
-          //temp_sub_shifted = create_svector_with_index(temp_sub->words, "", 1, (sparm->phi1_size+sparm->phi2_size)*2);
-          binary[i][j] = sprod_ns(sm->w, temp_sub);
-          free_svector(temp_sub);
-          //free_svector(temp_sub_shifted);
-
-          if(binary[i][j] != 0){
-              binary[i][j] = (double)(-2*binary[i][j])/(double)((x.n_pos+x.n_neg)*(x.n_pos+x.n_neg-1));
+          if(x.neighbors[i][j]){
+              temp_sub = sub_ss_sq(x.x_is[i].phi1phi2_shift, x.x_is[j].phi1phi2_shift);
+              binary[i][j] = sprod_ns(sm->w, temp_sub);
+              assert(binary[i][j] <= 0);
+              free_svector(temp_sub);
+          }
+          else{
+              binary[i][j] = 0;
           }
       }
+  }
+
+  if (x.n_neighbors){
+    for (i = 0; i < (x.n_pos+x.n_neg); i++){
+        for (j = (i+1); j < (x.n_pos+x.n_neg); j++){
+          if(binary[i][j] != 0){
+            binary[i][j] = (double)(-1*binary[i][j])/(double)x.n_neighbors;
+          }            
+        }
+    }
   }
 
   ybar->labels = maxflowwrapper(unary_pos, unary_neg, binary, x.n_pos, x.n_neg);
@@ -485,12 +537,15 @@ void parse_struct_parameters(STRUCT_LEARN_PARM *sparm) {
   sparm->phi1_size=24004;
   sparm->phi2_size=512;
 
+  sparm->pairwise_threshold=0;
+
   //sparm->phi1_size=3;
   //sparm->phi2_size=2;
   
   for (i=0;(i<sparm->custom_argc)&&((sparm->custom_argv[i])[0]=='-');i++) {
     switch ((sparm->custom_argv[i])[2]) {
       /* your code here */
+      case 't': i++; sparm->pairwise_threshold = atof(sparm->custom_argv[i]); break;
       default: printf("\nUnrecognized option %s!\n\n", sparm->custom_argv[i]); exit(0);
     }
   }

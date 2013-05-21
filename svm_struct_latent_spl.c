@@ -38,7 +38,7 @@
 #define UPDATE_BOUND 3
 #define MAX_CURRICULUM_ITER 10
 
-#define EQUALITY_EPSILON 1e-6
+#define EQUALITY_EPSILON 1e-5
 
 #define MAX(x,y) ((x) < (y) ? (y) : (x))
 #define MIN(x,y) ((x) > (y) ? (y) : (x))
@@ -46,7 +46,7 @@
 #define DEBUG_LEVEL 0
 
  //int mosek_qp_optimize(double**, double*, double*, long, double, double*, DOC **, int, int);
- int mosek_qp_optimize(double**,double**, double*, double*, long, long, double, double*);
+ int mosek_qp_optimize(double**,double**, double*, double*, long, long, double, double*, double, double);
 
 void my_read_input_parameters(int argc, char* argv[], char *trainfile, char *modelfile, 
 			      LEARN_PARM *learn_parm, KERNEL_PARM *kernel_parm, STRUCT_LEARN_PARM *struct_parm, 
@@ -380,18 +380,18 @@ void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double e
 
 	   	/* solve QP to update alpha */
 		//r = mosek_qp_optimize(G, delta, alpha, (long) size_active, C, &cur_obj, dXc, (sparm->phi1_size+sparm->phi2_size)*2, (sparm->phi1_size+sparm->phi2_size));
-		r = mosek_qp_optimize(G, qmatrix, delta, alpha, (long) size_active, (long) (sparm->phi1_size+sparm->phi2_size), C, &cur_obj);
+		r = mosek_qp_optimize(G, qmatrix, delta, alpha, (long) size_active, (long) (sparm->phi1_size+sparm->phi2_size), C, &cur_obj, 0, 0);
 	    
 		if(r >= 1293 && r <= 1296)
 		{
-			//printf("r:%d. G might not be psd due to numerical errors.\n",r);
-			//exit(1);
+			/*printf("r:%d. G might not be psd due to numerical errors.\n",r);
+			exit(1);*/
 			while(r==1295) {
 				for(i=0;i<size_active;i++) {
 					G[i][i] += 10*sparm->gram_regularization-sparm->gram_regularization;
 				}
 				sparm->gram_regularization *= 10;
-				r = mosek_qp_optimize(G, qmatrix, delta, alpha, (long) size_active, (long) (sparm->phi1_size+sparm->phi2_size), C, &cur_obj);
+				r = mosek_qp_optimize(G, qmatrix, delta, alpha, (long) size_active, (long) (sparm->phi1_size+sparm->phi2_size), C, &cur_obj, sparm->gram_regularization, sparm->gram_regularization*0.1);
 			}
 		}
 		else if(r)
@@ -419,7 +419,16 @@ void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double e
 	   		if((w[j]<EQUALITY_EPSILON) && (w[j]>(-1*EQUALITY_EPSILON))){
 	   			w[j] = 0;
 	   		}
-	   	}	   	
+	   	}	   
+
+	   	for(j=(sparm->phi1_size+sparm->phi2_size)*2+1; j<=(sparm->phi1_size+sparm->phi2_size)*3;j++){
+	   		//assert(w[j] <= 0);
+	   		if(w[j]>0){
+	   			printf("j = %ld, w[j] = %0.6f\n", j, w[j]);
+	   			fflush(stdout);
+	   		}
+	   		
+	   	}	
 
 		cur_slack = (double *) realloc(cur_slack,sizeof(double)*size_active);
 
@@ -893,7 +902,7 @@ void my_read_input_parameters(int argc, char *argv[], char *trainfile, char* mod
 	*init_spl_weight = 0.0;
 	*spl_factor = 1.3;
 
-	struct_parm->gram_regularization = 1E-6;
+	struct_parm->gram_regularization = 1E-7;
 
   struct_parm->custom_argc=0;
 

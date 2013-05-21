@@ -296,6 +296,7 @@ void   free_svector(SVECTOR *);
 void   free_svector_shallow(SVECTOR *);
 double    sprod_ss(SVECTOR *, SVECTOR *);
 SVECTOR*  sub_ss(SVECTOR *, SVECTOR *); 
+SVECTOR* sub_ss_sq(SVECTOR *, SVECTOR *);
 SVECTOR* sub_ss_abs(SVECTOR *, SVECTOR *);
 SVECTOR*  add_ss(SVECTOR *, SVECTOR *); 
 SVECTOR*  add_list_ns(SVECTOR *a);
