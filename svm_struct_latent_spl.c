@@ -384,9 +384,12 @@ void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double e
 	    
 		if(r >= 1293 && r <= 1296)
 		{
-			/*printf("r:%d. G might not be psd due to numerical errors.\n",r);
-			exit(1);*/
+			printf("r:%d. G might not be psd due to numerical errors.\n",r);
+			fflush(stdout);
+			/*exit(1);*/
 			while(r==1295) {
+				printf("r:%d. G might not be psd due to numerical errors. Gram Reg=%0.7f\n",r, sparm->gram_regularization);
+				fflush(stdout);
 				for(i=0;i<size_active;i++) {
 					G[i][i] += 10*sparm->gram_regularization-sparm->gram_regularization;
 				}
