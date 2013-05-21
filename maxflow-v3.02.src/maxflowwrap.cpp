@@ -29,5 +29,6 @@ extern "C" int *maxflowwrapper(double *unary_pos, double *unary_neg, double **bi
 	      labels[i] = 1;
 	  }
 	}
+	delete g;
 	return labels;
 }
