@@ -110,7 +110,7 @@ double single_kernel(KERNEL_PARM *kernel_parm, SVECTOR *a, SVECTOR *b)
 }
 
 double returnWeightAtIndex(WORD *words, int index){
-  long fnum;
+  long fnum = 0;
   while(words[fnum].wnum && words[fnum].wnum <= index){
     if (words[fnum].wnum == index){
       return words[fnum].weight;
