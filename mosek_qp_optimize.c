@@ -29,18 +29,18 @@ int mosek_qp_optimize(double** psiDiffs, double* delta, double* w, double* cur_s
   MSKtask_t task;
   MSKrescodee r;
 
-  c = (double*) malloc(sizeof(double)*(w_size+k));
+  c = (double*) malloc(sizeof(double)*(w_size+1));
   assert(c!=NULL);
-  aptrb = (MSKlidxt*) malloc(sizeof(MSKlidxt)*(w_size+k));
+  aptrb = (MSKlidxt*) malloc(sizeof(MSKlidxt)*(w_size+1));
   assert(aptrb!=NULL);
-  aptre = (MSKlidxt*) malloc(sizeof(MSKlidxt)*(w_size+k));
+  aptre = (MSKlidxt*) malloc(sizeof(MSKlidxt)*(w_size+1));
   assert(aptre!=NULL);
 
-  bkx = (MSKboundkeye*) malloc(sizeof(MSKboundkeye)*(w_size+k));
+  bkx = (MSKboundkeye*) malloc(sizeof(MSKboundkeye)*(w_size+1));
   assert(bkx!=NULL);
-  blx = (double*) malloc(sizeof(double)*(w_size+k));
+  blx = (double*) malloc(sizeof(double)*(w_size+1));
   assert(blx!=NULL);
-  bux = (double*) malloc(sizeof(double)*(w_size+k));
+  bux = (double*) malloc(sizeof(double)*(w_size+1));
   assert(bux!=NULL);
   qsubi = (MSKidxt*) malloc(sizeof(MSKidxt)*w_size);
   assert(qsubi!=NULL);  
@@ -49,10 +49,10 @@ int mosek_qp_optimize(double** psiDiffs, double* delta, double* w, double* cur_s
   qval = (double*) malloc(sizeof(double)*w_size);
   assert(qval!=NULL);  
 
-  double *solutionVec = (double *) malloc(sizeof(double)*(w_size+k));
+  double *solutionVec = (double *) malloc(sizeof(double)*(w_size+1));
 
   l=0;
-  for(i=0; i<k; i++){
+  for(i=0; i<1; i++){
     c[i] = C;
     aptrb[i] = l;
     for(j=0;j<k;j++){
@@ -67,7 +67,7 @@ int mosek_qp_optimize(double** psiDiffs, double* delta, double* w, double* cur_s
     aptre[i] = l;
   }  
   
-  for (i=k;i<(w_size+k);i++) {
+  for (i=1;i<(w_size+1);i++) {
 		c[i] = 0;
     aptrb[i] = l;
     for(j=0;j<k;j++){
@@ -84,18 +84,18 @@ int mosek_qp_optimize(double** psiDiffs, double* delta, double* w, double* cur_s
 		aptre[i] = l;
   }
 
-  for(i=0; i<k; i++){
+  for(i=0; i<1; i++){
       bkx[i] = MSK_BK_LO;
       blx[i] = 0;
       bux[i] = MSK_INFINITY;
   }
  
-  for (i=k;i<(w1_size+k);i++) {
+  for (i=1;i<(w1_size+1);i++) {
       bkx[i] = MSK_BK_FR;
       blx[i] = -MSK_INFINITY;
       bux[i] = MSK_INFINITY;
   }
-  for (i=(w1_size+k);i<(w_size+k);i++) {
+  for (i=(w1_size+1);i<(w_size+1);i++) {
       bkx[i] = MSK_BK_UP;
       blx[i] = -MSK_INFINITY;
       bux[i] = 0;
@@ -120,15 +120,15 @@ int mosek_qp_optimize(double** psiDiffs, double* delta, double* w, double* cur_s
 
   if (r==MSK_RES_OK) {
     /* create the optimization task */
-    r = MSK_maketask(env,k,(w_size+k),&task);
+    r = MSK_maketask(env,k,(w_size+1),&task);
 	
     if (r==MSK_RES_OK) {
       r = MSK_linkfunctotaskstream(task, MSK_STREAM_LOG,NULL,printstr);
 	  
       if (r==MSK_RES_OK) {
       	r = MSK_inputdata(task,
-      			  k,(w_size+k),
-      			  k,(w_size+k),
+      			  k,(w_size+1),
+      			  k,(w_size+1),
       			  c,0.0,
       			  aptrb,aptre,
       			  asub,aval,
@@ -139,7 +139,7 @@ int mosek_qp_optimize(double** psiDiffs, double* delta, double* w, double* cur_s
       if (r==MSK_RES_OK) {
       	/* coefficients for the Gram matrix */
       	t = 0;
-      	for (i=k;i<(w_size+k);i++) {
+      	for (i=1;i<(w_size+1);i++) {
       	    qsubi[t] = i;
       	    qsubj[t] = i;
       			qval[t] = 1;
@@ -173,7 +173,7 @@ int mosek_qp_optimize(double** psiDiffs, double* delta, double* w, double* cur_s
       			     MSK_SOL_ITR,
       			     MSK_SOL_ITEM_XX,
       			     0,
-      			     (w_size+k),
+      			     (w_size+1),
       			     solutionVec);
         /* print out alphas */
       	/*
@@ -190,11 +190,11 @@ int mosek_qp_optimize(double** psiDiffs, double* delta, double* w, double* cur_s
     MSK_deleteenv(&env);
   }
 
-  for(i=0; i<k; i++){
+  for(i=0; i<1; i++){
       cur_slack[i] = solutionVec[i];
   }
 
-  for (i = k; i < (w_size+k); i++)
+  for (i = 1; i < (w_size+1); i++)
   {
     w[i-k+1] = solutionVec[i];
   }

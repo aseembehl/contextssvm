@@ -38,7 +38,7 @@
 #define UPDATE_BOUND 3
 #define MAX_CURRICULUM_ITER 10
 
-#define EQUALITY_EPSILON 1e-6
+#define EQUALITY_EPSILON 1e-8
 #define SLACK_EPSILON 1e-8
 
 #define MAX(x,y) ((x) < (y) ? (y) : (x))
@@ -369,7 +369,8 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 
    		/* solve QP to update w */
    		clear_nvector(w,sm->sizePsi);
-   		cur_slack = (double *) realloc(cur_slack,sizeof(double)*size_active);
+   		//cur_slack = (double *) realloc(cur_slack,sizeof(double)*size_active);
+   		cur_slack = (double *) realloc(cur_slack,sizeof(double));
 
 		r = mosek_qp_optimize(psiDiffs, delta, w, cur_slack, (long) size_active, C, &cur_obj, (sparm->phi1_size+sparm->phi2_size)*3, (sparm->phi1_size+sparm->phi2_size)*2);
 
@@ -384,11 +385,11 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 			exit(1);
 		}
 
-		for(j = 1; j <= (sparm->phi1_size+sparm->phi2_size)*3; j++) {
+		/*for(j = 1; j <= (sparm->phi1_size+sparm->phi2_size)*3; j++) {
 			if((w[j]<EQUALITY_EPSILON) && (w[j]>(-1*EQUALITY_EPSILON))){
 	   			w[j] = 0;
    			}
-		}
+		}*/
 
 		/*for (j=0;j<size_active;j++) {
 	     	if (cur_slack[j]>ALPHA_THRESHOLD) {
@@ -398,16 +399,17 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 					idle[j]++;
    		}*/
 
-		mv_iter = 0;
+		/*mv_iter = 0;
 		if(size_active > 1) {
 			for(j = 0; j < size_active; j++) {
 				if(cur_slack[j] >= cur_slack[mv_iter])
 					mv_iter = j;
 			}
-		}
+		}*/
 
 		if(size_active > 1)
-			threshold = cur_slack[mv_iter];
+			//threshold = cur_slack[mv_iter];
+			threshold = cur_slack[0];
 		else
 			threshold = 0.0;
 
