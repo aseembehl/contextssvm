@@ -196,7 +196,7 @@ int mosek_qp_optimize(double** psiDiffs, double* delta, double* w, double* cur_s
 
   for (i = 1; i < (w_size+1); i++)
   {
-    w[i-k+1] = solutionVec[i];
+    w[i] = solutionVec[i];
   }
   
   

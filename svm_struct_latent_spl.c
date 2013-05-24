@@ -357,9 +357,9 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 				psiDiffs[size_active-1][t-1] = 0;
 			}
 			psiDiffs[size_active-1][dXc[size_active-1]->fvec->words[fnum].wnum-1] = dXc[size_active-1]->fvec->words[fnum].weight;
-			if((psiDiffs[size_active-1][dXc[size_active-1]->fvec->words[fnum].wnum-1]<EQUALITY_EPSILON) && (psiDiffs[size_active-1][dXc[size_active-1]->fvec->words[fnum].wnum-1]>(-1*EQUALITY_EPSILON))){
+			/*if((psiDiffs[size_active-1][dXc[size_active-1]->fvec->words[fnum].wnum-1]<EQUALITY_EPSILON) && (psiDiffs[size_active-1][dXc[size_active-1]->fvec->words[fnum].wnum-1]>(-1*EQUALITY_EPSILON))){
 				psiDiffs[size_active-1][dXc[size_active-1]->fvec->words[fnum].wnum-1] = 0;
-			}
+			}*/
 			last_wnum = dXc[size_active-1]->fvec->words[fnum].wnum;
 			fnum++;
 		}
