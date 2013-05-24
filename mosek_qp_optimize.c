@@ -5,94 +5,106 @@
 #include <assert.h>
 #include "mosek.h"
 
-#define EQUALITY_EPSILON 1e-6
-
 static void MSKAPI printstr(void *handle, char str[]) {
   //printf("%s", str);
 } /* printstr */
 
-double limitprecision(double input){
-  double temp1 = input*1e6;
-  int temp2= (int)temp1;
-  double output = (double)temp2/1e6;
-  return output;
-}
-
-int mosek_qp_optimize(double** G, double** qmatrix, double* delta, double* alpha, long k, long n_w2, double C, double *dual_obj, double gram_regularization, double last_gram_regularization) {
-  long i,j;
-  long t=0;
-  double *c=NULL;
-  MSKlidxt *aptrb=NULL;
-  MSKlidxt *aptre=NULL;
+int mosek_qp_optimize(double** psiDiffs, double* delta, double* w, double* cur_slack, long k, double C, double *primal_obj, long w_size, long w1_size) {
+  long i,j,t,l;
+  double *c;
+  MSKlidxt *aptrb;
+  MSKlidxt *aptre;
   MSKidxt *asub=NULL;
   double *aval=NULL;
-  MSKboundkeye bkc[1];
-  double blc[1];
-  double buc[1];
-  MSKboundkeye *bkx=NULL;
-  double *blx=NULL;
-  double *bux=NULL;
-  MSKidxt *qsubi=NULL;
-  MSKidxt *qsubj=NULL;
-  double *qval=NULL;
+  MSKboundkeye bkc[k];
+  double blc[k];
+  double buc[k];
+  MSKboundkeye *bkx;
+  double *blx;
+  double *bux;
+  MSKidxt *qsubi,*qsubj;
+  double *qval;
 
-  MSKenv_t env=NULL;
-  MSKtask_t task=NULL;
+  MSKenv_t env;
+  MSKtask_t task;
   MSKrescodee r;
-  /*double dual_obj;*/
 
-  c = (double*) malloc(sizeof(double)*(k+n_w2));
+  c = (double*) malloc(sizeof(double)*(w_size+k));
   assert(c!=NULL);
-  aptrb = (MSKlidxt*) malloc(sizeof(MSKlidxt)*(k+n_w2));
+  aptrb = (MSKlidxt*) malloc(sizeof(MSKlidxt)*(w_size+k));
   assert(aptrb!=NULL);
-  aptre = (MSKlidxt*) malloc(sizeof(MSKlidxt)*(k+n_w2));
+  aptre = (MSKlidxt*) malloc(sizeof(MSKlidxt)*(w_size+k));
   assert(aptre!=NULL);
-  asub = (MSKidxt*) malloc(sizeof(MSKidxt)*k);
-  assert(asub!=NULL);
-  aval = (double*) malloc(sizeof(double)*k);
-  assert(aval!=NULL);
-  bkx = (MSKboundkeye*) malloc(sizeof(MSKboundkeye)*(k+n_w2));
+
+  bkx = (MSKboundkeye*) malloc(sizeof(MSKboundkeye)*(w_size+k));
   assert(bkx!=NULL);
-  blx = (double*) malloc(sizeof(double)*(k+n_w2));
+  blx = (double*) malloc(sizeof(double)*(w_size+k));
   assert(blx!=NULL);
-  bux = (double*) malloc(sizeof(double)*(k+n_w2));
+  bux = (double*) malloc(sizeof(double)*(w_size+k));
   assert(bux!=NULL);
-
-  //long q_length = k*(k+1)/2 + n_w2 + n_w2*k;
-
-  /*qsubi = (MSKidxt*) malloc(sizeof(MSKidxt)*q_length);
+  qsubi = (MSKidxt*) malloc(sizeof(MSKidxt)*w_size);
   assert(qsubi!=NULL);  
-  qsubj = (MSKidxt*) malloc(sizeof(MSKidxt)*q_length);
+  qsubj = (MSKidxt*) malloc(sizeof(MSKidxt)*w_size);
   assert(qsubj!=NULL);  
-  qval = (double*) malloc(sizeof(double)*q_length);
-  assert(qval!=NULL);  */
+  qval = (double*) malloc(sizeof(double)*w_size);
+  assert(qval!=NULL);  
 
-  for (i=0;i<k;i++) {
-		c[i] = -delta[i];
-		aptrb[i] = i;
-		aptre[i] = i+1;
-		asub[i] = 0;
-		aval[i] = 1.0;	
-  }
-  for(i=0;i<n_w2;i++){
-    c[k+i] = 0;
-    aptrb[k+i] = k;
-    aptre[k+i] = k;
+  double *solutionVec = (double *) malloc(sizeof(double)*(w_size+k));
+
+  l=0;
+  for(i=0; i<k; i++){
+    c[i] = C;
+    aptrb[i] = l;
+    for(j=0;j<k;j++){
+      asub = (MSKidxt*) realloc(asub, sizeof(MSKidxt)*(l+1));
+      assert(asub!=NULL);
+      aval = (double*) realloc(aval, sizeof(double)*(l+1));
+      assert(aval!=NULL);
+      asub[l] = j;
+      aval[l] = 1;
+      l++;
+    }
+    aptre[i] = l;
+  }  
+  
+  for (i=k;i<(w_size+k);i++) {
+		c[i] = 0;
+    aptrb[i] = l;
+    for(j=0;j<k;j++){
+      if(psiDiffs[j][i-1] != 0){
+          asub = (MSKidxt*) realloc(asub, sizeof(MSKidxt)*(l+1));
+          assert(asub!=NULL);
+          aval = (double*) realloc(aval, sizeof(double)*(l+1));
+          assert(aval!=NULL);
+          asub[l] = j;
+          aval[l] = psiDiffs[j][i-1];
+          l++;
+      }
+    }
+		aptre[i] = l;
   }
 
-  for(i=0;i<(k+n_w2);i++){
-    bkx[i] = MSK_BK_LO;
-    blx[i] = 0.0;
-    bux[i] = MSK_INFINITY;
+  for(i=0; i<k; i++){
+      bkx[i] = MSK_BK_LO;
+      blx[i] = 0;
+      bux[i] = MSK_INFINITY;
   }
-  bkc[0] = MSK_BK_UP;
-  blc[0] = -MSK_INFINITY;
-  buc[0] = C;
-	/*
-  bkc[0] = MSK_BK_FX;
-  blc[0] = C;
-  buc[0] = C;  
-	*/
+ 
+  for (i=k;i<(w1_size+k);i++) {
+      bkx[i] = MSK_BK_FR;
+      blx[i] = -MSK_INFINITY;
+      bux[i] = MSK_INFINITY;
+  }
+  for (i=(w1_size+k);i<(w_size+k);i++) {
+      bkx[i] = MSK_BK_UP;
+      blx[i] = -MSK_INFINITY;
+      bux[i] = 0;
+  }
+  for (i=0; i<k; i++) {
+      bkc[i] = MSK_BK_LO;
+      blc[i] = delta[i];
+      buc[i] = MSK_INFINITY;
+  }
   
   /* create mosek environment */
   r = MSK_makeenv(&env, NULL, NULL, NULL, NULL);
@@ -108,15 +120,15 @@ int mosek_qp_optimize(double** G, double** qmatrix, double* delta, double* alpha
 
   if (r==MSK_RES_OK) {
     /* create the optimization task */
-    r = MSK_maketask(env,1,(k+n_w2),&task);
+    r = MSK_maketask(env,k,(w_size+k),&task);
 	
     if (r==MSK_RES_OK) {
       r = MSK_linkfunctotaskstream(task, MSK_STREAM_LOG,NULL,printstr);
 	  
       if (r==MSK_RES_OK) {
       	r = MSK_inputdata(task,
-      			  1,(k+n_w2),
-      			  1,(k+n_w2),
+      			  k,(w_size+k),
+      			  k,(w_size+k),
       			  c,0.0,
       			  aptrb,aptre,
       			  asub,aval,
@@ -127,51 +139,14 @@ int mosek_qp_optimize(double** G, double** qmatrix, double* delta, double* alpha
       if (r==MSK_RES_OK) {
       	/* coefficients for the Gram matrix */
       	t = 0;
-      	for (i=0;i<k;i++) {
-      	  for (j=0;j<=i;j++) {
-      	    if (G[i][j] > EQUALITY_EPSILON || G[i][j] < (-1*EQUALITY_EPSILON)){
-              t++;
-              qsubi = (MSKidxt*) realloc(qsubi, sizeof(MSKidxt)*t);
-              assert(qsubi!=NULL);  
-              qsubj = (MSKidxt*) realloc(qsubj, sizeof(MSKidxt)*t);
-              assert(qsubj!=NULL);  
-              qval = (double*) realloc(qval, sizeof(double)*t);
-              assert(qval!=NULL); 
-              qsubi[t-1] = i;
-              qsubj[t-1] = j;
-              qval[t-1] = G[i][j];
-              
-            }            
-      	  }
-      	}
-        for(i = 0; i < n_w2; i++){
-          for (j = 0; j < k; j++){
-            if (qmatrix[j][i] > EQUALITY_EPSILON || qmatrix[j][i] < (-1*EQUALITY_EPSILON)){
-              t++;
-              qsubi = (MSKidxt*) realloc(qsubi, sizeof(MSKidxt)*t);
-              assert(qsubi!=NULL);  
-              qsubj = (MSKidxt*) realloc(qsubj, sizeof(MSKidxt)*t);
-              assert(qsubj!=NULL);  
-              qval = (double*) realloc(qval, sizeof(double)*t);
-              assert(qval!=NULL); 
-              qsubi[t-1] = k+i;
-              qsubj[t-1] = j;
-              qval[t-1] = qmatrix[j][i];
-            }      
-          }
-          t++;
-          qsubi = (MSKidxt*) realloc(qsubi, sizeof(MSKidxt)*t);
-          assert(qsubi!=NULL);  
-          qsubj = (MSKidxt*) realloc(qsubj, sizeof(MSKidxt)*t);
-          assert(qsubj!=NULL);  
-          qval = (double*) realloc(qval, sizeof(double)*t);
-          assert(qval!=NULL); 
-          qsubi[t-1] = k+i;
-          qsubj[t-1] = k+i;
-          qval[t-1] = 1 + gram_regularization - last_gram_regularization; 
-        }
+      	for (i=k;i<(w_size+k);i++) {
+      	    qsubi[t] = i;
+      	    qsubj[t] = i;
+      			qval[t] = 1;
+      	    t++;
+	      }
 	    
-	       r = MSK_putqobj(task, t, qsubi,qsubj,qval);
+	       r = MSK_putqobj(task, w_size, qsubi,qsubj,qval);
       }
       
 
@@ -179,7 +154,7 @@ int mosek_qp_optimize(double** G, double** qmatrix, double* delta, double* alpha
       /*
       printf("t: %ld\n", t);
       for (i=0;i<t;i++) {
-	printf("qsubi: %d, qsubj: %d, qval: %.4f\n", qsubi[i], qsubj[i], qval[i]);
+	       printf("qsubi: %d, qsubj: %d, qval: %.4f\n", qsubi[i], qsubj[i], qval[i]);
       }
       fflush(stdout);
       */
@@ -198,21 +173,30 @@ int mosek_qp_optimize(double** G, double** qmatrix, double* delta, double* alpha
       			     MSK_SOL_ITR,
       			     MSK_SOL_ITEM_XX,
       			     0,
-      			     (k+n_w2),
-      			     alpha);
-              /* print out alphas */
+      			     (w_size+k),
+      			     solutionVec);
+        /* print out alphas */
       	/*
       	for (i=0;i<k;i++) {
       	  printf("alpha[%ld]: %.8f\n", i, alpha[i]); fflush(stdout);
       	}
       	*/
       	/* output the objective value */
-      	MSK_getprimalobj(task, MSK_SOL_ITR, dual_obj);
+      	MSK_getprimalobj(task, MSK_SOL_ITR, primal_obj);
       	//printf("ITER DUAL_OBJ %.8g\n", -(*dual_obj)); fflush(stdout);
       }
       MSK_deletetask(&task);
     }
     MSK_deleteenv(&env);
+  }
+
+  for(i=0; i<k; i++){
+      cur_slack[i] = solutionVec[i];
+  }
+
+  for (i = k; i < (w_size+k); ++i)
+  {
+    w[i] = solutionVec[i];
   }
   
   
@@ -228,6 +212,8 @@ int mosek_qp_optimize(double** G, double** qmatrix, double* delta, double* alpha
   free(qsubi);  
   free(qsubj);  
   free(qval);  
+
+  free(solutionVec);
   
 	if(r == MSK_RES_OK)
   	return(0);  

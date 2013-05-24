@@ -38,7 +38,8 @@
 #define UPDATE_BOUND 3
 #define MAX_CURRICULUM_ITER 10
 
-#define EQUALITY_EPSILON 1e-5
+#define EQUALITY_EPSILON 1e-6
+#define SLACK_EPSILON 1e-8
 
 #define MAX(x,y) ((x) < (y) ? (y) : (x))
 #define MIN(x,y) ((x) > (y) ? (y) : (x))
@@ -46,7 +47,8 @@
 #define DEBUG_LEVEL 0
 
  //int mosek_qp_optimize(double**, double*, double*, long, double, double*, DOC **, int, int);
- int mosek_qp_optimize(double**,double**, double*, double*, long, long, double, double*, double, double);
+ //int mosek_qp_optimize(double**,double**, double*, double*, long, long, double, double*, double, double);
+int mosek_qp_optimize(double**, double*, double*, double*, long, double, double*, long, long);
 
 void my_read_input_parameters(int argc, char* argv[], char *trainfile, char *modelfile, 
 			      LEARN_PARM *learn_parm, KERNEL_PARM *kernel_parm, STRUCT_LEARN_PARM *struct_parm, 
@@ -54,8 +56,8 @@ void my_read_input_parameters(int argc, char* argv[], char *trainfile, char *mod
 
 void my_wait_any_key();
 
-int resize_cleanup(int size_active, int **ptr_idle, double **ptr_alpha, double **ptr_delta, DOC ***ptr_dXc,
-		double ***ptr_G, int *mv_iter);
+int resize_cleanup(int size_active, int **ptr_idle, double **ptr_cur_slack, double **ptr_delta, DOC ***ptr_dXc,
+		double ***ptr_psiDiffs, int *mv_iter);
 
 void approximate_to_psd(double **G, int size_active, double eps);
 
@@ -251,9 +253,9 @@ SVECTOR* find_cutting_plane(EXAMPLE *ex, SVECTOR **fycache, double *margin, long
   return(fvec); 
 }
 
-void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double epsilon, SVECTOR **fycache, EXAMPLE *ex, 
+double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double epsilon, SVECTOR **fycache, EXAMPLE *ex, 
 															STRUCTMODEL *sm, STRUCT_LEARN_PARM *sparm, int *valid_examples) {
-  long i,j;
+  long i,j,t;
   double *alpha;
   DOC **dXc; /* constraint matrix */
   double *delta; /* rhs of constraints */
@@ -266,11 +268,10 @@ void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double e
 	double *cur_slack = NULL;
 	int mv_iter;
 	int *idle = NULL;
-	double **G = NULL;
-	double **G2 = NULL;
-	double **qmatrix = NULL;
+	double **psiDiffs = NULL;
 	SVECTOR *f;
 	int r;
+	long fnum, last_wnum;
 
   /* set parameters for hideo solver */
   LEARN_PARM lparm;
@@ -311,10 +312,8 @@ void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double e
   dXc = NULL;
   delta = NULL;
 
-  /*qmatrix = (double **) malloc(sizeof(double *)*10);
-  assert(qmatrix!=NULL);*/
-
   printf("Running structural SVM solver: "); fflush(stdout); 
+
 	new_constraint = find_cutting_plane(ex, fycache, &margin, m, sm, sparm, valid_examples);
  	value = margin - sprod_ns(w, new_constraint);
 	while((value>threshold+epsilon)&&(iter<MAX_ITER)) {
@@ -332,16 +331,209 @@ void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double e
 	   	dXc[size_active-1]->slackid = 1; // only one common slackid (one-slack)
 	   	dXc[size_active-1]->costfactor = 1.0;
 
+	   	delta = (double*)realloc(delta, sizeof(double)*size_active);
+	   	assert(delta!=NULL);
+	   	delta[size_active-1] = margin;
+
+	   	/*alpha = (double*)realloc(alpha, sizeof(double)*size_active);
+	   	assert(alpha!=NULL);
+	   	alpha[size_active-1] = 0.0;*/
+
+		/*idle = (int *) realloc(idle, sizeof(int)*size_active);
+		assert(idle!=NULL);
+		idle[size_active-1] = 0;*/
+
+		/* update Gram matrix */
+		psiDiffs = (double **) realloc(psiDiffs, sizeof(double *)*size_active);
+		assert(psiDiffs!=NULL);
+		psiDiffs[size_active-1] = NULL;
+		psiDiffs[size_active-1] = (double *) realloc(psiDiffs[size_active-1], sizeof(double)*((sparm->phi1_size+sparm->phi2_size)*3));
+		assert(psiDiffs[size_active-1]!=NULL);
+		
+		fnum = 0;
+		last_wnum = 0;
+		while(dXc[size_active-1]->fvec->words[fnum].wnum) {
+			for (t = last_wnum+1; t < dXc[size_active-1]->fvec->words[fnum].wnum; t++)	{
+				psiDiffs[size_active-1][t-1] = 0;
+			}
+			psiDiffs[size_active-1][dXc[size_active-1]->fvec->words[fnum].wnum-1] = dXc[size_active-1]->fvec->words[fnum].weight;
+			if((psiDiffs[size_active-1][dXc[size_active-1]->fvec->words[fnum].wnum-1]<EQUALITY_EPSILON) && (psiDiffs[size_active-1][dXc[size_active-1]->fvec->words[fnum].wnum-1]>(-1*EQUALITY_EPSILON))){
+				psiDiffs[size_active-1][dXc[size_active-1]->fvec->words[fnum].wnum-1] = 0;
+			}
+			last_wnum = dXc[size_active-1]->fvec->words[fnum].wnum;
+			fnum++;
+		}
+		for (t = (last_wnum+1); t <= (sparm->phi1_size+sparm->phi2_size)*3; t++)	{
+			psiDiffs[size_active-1][t-1] = 0;
+		}			
+
+   		/* solve QP to update w */
+   		clear_nvector(w,sm->sizePsi);
+   		cur_slack = (double *) realloc(cur_slack,sizeof(double)*size_active);
+
+		r = mosek_qp_optimize(psiDiffs, delta, w, cur_slack, (long) size_active, C, &cur_obj, (sparm->phi1_size+sparm->phi2_size)*3, (sparm->phi1_size+sparm->phi2_size)*2);
+
+		if(r >= 1293 && r <= 1296)
+		{
+			printf("r:%d. G might not be psd due to numerical errors.\n",r);
+			exit(1);
+		}
+		else if(r)
+		{
+			printf("Error %d in mosek_qp_optimize: Check ${MOSEKHOME}/${VERSION}/tools/platform/${PLATFORM}/h/mosek.h\n",r);
+			exit(1);
+		}
+
+		for(j = 1; j <= (sparm->phi1_size+sparm->phi2_size)*3; j++) {
+			if((w[j]<EQUALITY_EPSILON) && (w[j]>(-1*EQUALITY_EPSILON))){
+	   			w[j] = 0;
+   			}
+		}
+
+		/*for (j=0;j<size_active;j++) {
+	     	if (cur_slack[j]>ALPHA_THRESHOLD) {
+					idle[j] = 0;
+	     	}
+				else
+					idle[j]++;
+   		}*/
+
+		mv_iter = 0;
+		if(size_active > 1) {
+			for(j = 0; j < size_active; j++) {
+				if(cur_slack[j] >= cur_slack[mv_iter])
+					mv_iter = j;
+			}
+		}
+
+		if(size_active > 1)
+			threshold = cur_slack[mv_iter];
+		else
+			threshold = 0.0;
+
+ 		new_constraint = find_cutting_plane(ex, fycache, &margin, m, sm, sparm, valid_examples);
+   		value = margin - sprod_ns(w, new_constraint);
+
+		/*if((iter % CLEANUP_CHECK) == 0)
+		{
+			printf("+"); fflush(stdout);
+			size_active = resize_cleanup(size_active, &idle, &cur_slack, &delta, &dXc, &psiDiffs, &mv_iter);
+		}*/
+
+ 	} // end cutting plane while loop 
+
+	primal_obj = current_obj_val(ex, fycache, m, sm, sparm, C, valid_examples);
+
+  printf(" Inner loop optimization finished.\n"); fflush(stdout); 
+      
+  /* free memory */
+  for (j=0;j<size_active;j++) {
+		free(psiDiffs[j]);
+    free_example(dXc[j],1);	
+  }
+	free(psiDiffs);
+  free(dXc);
+  //free(alpha);
+  free(delta);
+  free_svector(new_constraint);
+	free(cur_slack);
+	//free(idle);
+  if (svm_model!=NULL) free_model(svm_model,0);
+
+  return(primal_obj);
+}
+
+/*void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double epsilon, SVECTOR **fycache, EXAMPLE *ex, 
+															STRUCTMODEL *sm, STRUCT_LEARN_PARM *sparm, int *valid_examples) {
+  long i,j;
+  double *alpha;
+  DOC **dXc; // constraint matrix 
+  double *delta; // rhs of constraints 
+  SVECTOR *new_constraint;
+  int iter, size_active; 
+  double value;
+	double threshold = 0.0;
+  double margin;
+  double primal_obj, cur_obj;
+	double *cur_slack = NULL;
+	int mv_iter;
+	int *idle = NULL;
+	double **G = NULL;
+	double **G2 = NULL;
+	double **qmatrix = NULL;
+	SVECTOR *f;
+	int r;
+
+  // set parameters for hideo solver 
+  LEARN_PARM lparm;
+  KERNEL_PARM kparm;
+  MODEL *svm_model=NULL;
+  lparm.biased_hyperplane = 0;
+  lparm.epsilon_crit = MIN(epsilon,0.001);
+  lparm.svm_c = C;
+  lparm.sharedslack = 1;
+  kparm.kernel_type = LINEAR;
+
+  lparm.remove_inconsistent=0;
+  lparm.skip_final_opt_check=0;
+  lparm.svm_maxqpsize=10;
+  lparm.svm_newvarsinqp=0;
+  lparm.svm_iter_to_shrink=-9999;
+  lparm.maxiter=100000;
+  lparm.kernel_cache_size=40;
+  lparm.eps = epsilon; 
+  lparm.transduction_posratio=-1.0;
+  lparm.svm_costratio=1.0;
+  lparm.svm_costratio_unlab=1.0;
+  lparm.svm_unlabbound=1E-5;
+  lparm.epsilon_a=1E-10;  // changed from 1e-15 
+  lparm.compute_loo=0;
+  lparm.rho=1.0;
+  lparm.xa_depth=0;
+  strcpy(lparm.alphafile,"");
+  kparm.poly_degree=3;
+  kparm.rbf_gamma=1.0;
+  kparm.coef_lin=1;
+  kparm.coef_const=1;
+  strcpy(kparm.custom,"empty");
+ 
+  iter = 0;
+  size_active = 0;
+  alpha = NULL;
+  dXc = NULL;
+  delta = NULL;
+
+  //qmatrix = (double **) malloc(sizeof(double *)*10);
+  //assert(qmatrix!=NULL);
+
+  printf("Running structural SVM solver: "); fflush(stdout); 
+	new_constraint = find_cutting_plane(ex, fycache, &margin, m, sm, sparm, valid_examples);
+ 	value = margin - sprod_ns(w, new_constraint);
+	while((value>threshold+epsilon)&&(iter<MAX_ITER)) {
+		iter+=1;
+		size_active+=1;
+
+		printf("."); fflush(stdout); 
+
+
+	    // add  constraint 
+	  	dXc = (DOC**)realloc(dXc, sizeof(DOC*)*size_active);
+	   	assert(dXc!=NULL);
+	   	dXc[size_active-1] = (DOC*)malloc(sizeof(DOC));
+	   	dXc[size_active-1]->fvec = new_constraint; 
+	   	dXc[size_active-1]->slackid = 1; // only one common slackid (one-slack)
+	   	dXc[size_active-1]->costfactor = 1.0;
+
 
 	   	delta = (double*)realloc(delta, sizeof(double)*size_active);
 	   	assert(delta!=NULL);
 	   	delta[size_active-1] = margin;
 
-	   	/*alpha = (double*)malloc(sizeof(double)*(size_active+(sparm->phi1_size+sparm->phi2_size)));
-	   	assert(alpha!=NULL);
-   		for(j=0; j<(sparm->phi1_size+sparm->phi2_size)+size_active; j++){
-   			alpha[j] = 0.0;
-   		}*/
+	   	//alpha = (double*)malloc(sizeof(double)*(size_active+(sparm->phi1_size+sparm->phi2_size)));
+	   	//assert(alpha!=NULL);
+   		//for(j=0; j<(sparm->phi1_size+sparm->phi2_size)+size_active; j++){
+   		//	alpha[j] = 0.0;
+   		//}
    		alpha = (double*)realloc(alpha, sizeof(double)*(size_active+(sparm->phi1_size+sparm->phi2_size)));
 	   	assert(alpha!=NULL);
 	   	alpha[size_active-1] = 0.0;
@@ -359,7 +551,7 @@ void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double e
 			qmatrix[size_active-1][j] = (-1)*returnWeightAtIndex(dXc[size_active-1]->fvec->words, ((sparm->phi1_size+sparm->phi2_size)*2+j+1));
 		}
 
-		/* update Gram matrix */
+		// update Gram matrix 
 		G = (double **) realloc(G, sizeof(double *)*size_active);
 		assert(G!=NULL);
 		G[size_active-1] = NULL;
@@ -375,10 +567,10 @@ void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double e
 		}
 		G[size_active-1][size_active-1] = sprod_ss(dXc[size_active-1]->fvec,dXc[size_active-1]->fvec);
 
-		/* hack: add a constant to the diagonal to make sure G is PSD */
+		// hack: add a constant to the diagonal to make sure G is PSD 
 		G[size_active-1][size_active-1] += 1e-6;
 
-	   	/* solve QP to update alpha */
+	   	// solve QP to update alpha 
 		//r = mosek_qp_optimize(G, delta, alpha, (long) size_active, C, &cur_obj, dXc, (sparm->phi1_size+sparm->phi2_size)*2, (sparm->phi1_size+sparm->phi2_size));
 		r = mosek_qp_optimize(G, qmatrix, delta, alpha, (long) size_active, (long) (sparm->phi1_size+sparm->phi2_size), C, &cur_obj, 0, 0);
 	    
@@ -386,7 +578,7 @@ void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double e
 		{
 			printf("r:%d. G might not be psd due to numerical errors.\n",r);
 			fflush(stdout);
-			/*exit(1);*/
+			//exit(1);
 			while(r==1295) {
 				printf("r:%d. G might not be psd due to numerical errors. Gram Reg=%0.7f\n",r, sparm->gram_regularization);
 				fflush(stdout);
@@ -481,7 +673,7 @@ void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double e
 
   printf(" Inner loop optimization finished.\n"); fflush(stdout); 
       
-  /* free memory */
+  // free memory
   for (j=0;j<size_active;j++) {
 		free(G[j]);
     free_example(dXc[j],1);	
@@ -497,7 +689,7 @@ void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double e
 
   //return(primal_obj);
   return;
-}
+}*/
 
 int check_acs_convergence(int *prev_valid_examples, int *valid_examples, long m)
 {
@@ -578,7 +770,7 @@ int update_valid_examples(double *w, long m, double C, SVECTOR **fycache, EXAMPL
 	return nValid;
 }
 
-void alternate_convex_search(double *w, long m, int MAX_ITER, double C, double epsilon, SVECTOR **fycache, EXAMPLE *ex, 
+double alternate_convex_search(double *w, long m, int MAX_ITER, double C, double epsilon, SVECTOR **fycache, EXAMPLE *ex, 
                                STRUCTMODEL *sm, STRUCT_LEARN_PARM *sparm, int *valid_examples, double spl_weight) {
 
 	long i;
@@ -647,15 +839,15 @@ void alternate_convex_search(double *w, long m, int MAX_ITER, double C, double e
 		}
 	}
 
-	//double primal_obj;
-	//primal_obj = current_obj_val(ex, fycache, m, sm, sparm, C, prev_valid_examples);
+	double primal_obj;
+	primal_obj = current_obj_val(ex, fycache, m, sm, sparm, C, prev_valid_examples);
 	
 	free(prev_valid_examples);
 	free(best_w);
 
-	return;
+	//return;
 	//return(relaxed_primal_obj);
-	//return(primal_obj);
+	return(primal_obj);
 }
 
 
@@ -841,8 +1033,10 @@ int main(int argc, char* argv[]) {
 	spl_weight = init_spl_weight;
 
 	/* solve biconvex self-paced learning problem */
-	//primal_obj = alternate_convex_search(w, m, MAX_ITER, C, epsilon, fycache, ex, &sm, &sparm, valid_examples, spl_weight);
-	alternate_convex_search(w, m, MAX_ITER, C, epsilon, fycache, ex, &sm, &sparm, valid_examples, spl_weight);
+	primal_obj = alternate_convex_search(w, m, MAX_ITER, C, epsilon, fycache, ex, &sm, &sparm, valid_examples, spl_weight);
+	printf("primal objective: %.4f\n", primal_obj);
+	fflush(stdout);
+	//alternate_convex_search(w, m, MAX_ITER, C, epsilon, fycache, ex, &sm, &sparm, valid_examples, spl_weight);
 	int nValid = 0;
 	for (i=0;i<m;i++) {
 		if(valid_examples[i]) {
@@ -962,7 +1156,76 @@ void my_wait_any_key()
   (void)getc(stdin);
 }
 
-int resize_cleanup(int size_active, int **ptr_idle, double **ptr_alpha, double **ptr_delta, DOC ***ptr_dXc, 
+int resize_cleanup(int size_active, int **ptr_idle, double **ptr_cur_slack, double **ptr_delta, DOC ***ptr_dXc, 
+		double ***ptr_psiDiffs, int *mv_iter) {
+  int i,j, new_size_active;
+  long k;
+
+  int *idle=*ptr_idle;
+  double *cur_slack=*ptr_cur_slack;
+  double *delta=*ptr_delta;
+	DOC	**dXc = *ptr_dXc;
+	double **psiDiffs = *ptr_psiDiffs;
+	int new_mv_iter;
+
+  i=0;
+  while ((i<size_active)&&(idle[i]<IDLE_ITER)) i++;
+  j=i;
+  while((j<size_active)&&(idle[j]>=IDLE_ITER)) j++;
+
+  while (j<size_active) {
+    // copying 
+    cur_slack[i] = cur_slack[j];
+    delta[i] = delta[j];
+	free(psiDiffs[i]);
+	psiDiffs[i] = psiDiffs[j];
+	psiDiffs[j] = NULL;
+    free_example(dXc[i],1);
+    dXc[i] = dXc[j];
+    dXc[j] = NULL;
+	if(j == *mv_iter)
+		new_mv_iter = i;
+
+    i++;
+    j++;
+    while((j<size_active)&&(idle[j]>=IDLE_ITER)) j++;
+  }
+  for (k=i;k<size_active;k++) {
+	if (psiDiffs[k]!=NULL) free(psiDiffs[k]);
+    if (dXc[k]!=NULL) free_example(dXc[k],1);
+  }
+  *mv_iter = new_mv_iter;
+  new_size_active = i;
+  cur_slack = (double*)realloc(cur_slack, sizeof(double)*new_size_active);
+  delta = (double*)realloc(delta, sizeof(double)*new_size_active);
+  psiDiffs = (double **) realloc(psiDiffs, sizeof(double *)*new_size_active);
+  dXc = (DOC**)realloc(dXc, sizeof(DOC*)*new_size_active);
+  assert(dXc!=NULL);
+
+  // resize idle 
+  i=0;
+  while ((i<size_active)&&(idle[i]<IDLE_ITER)) i++;
+  j=i;
+  while((j<size_active)&&(idle[j]>=IDLE_ITER)) j++;
+
+  while (j<size_active) {
+    idle[i] = idle[j];
+    i++;
+    j++;
+    while((j<size_active)&&(idle[j]>=IDLE_ITER)) j++;
+  }  
+  idle = (int*)realloc(idle, sizeof(int)*new_size_active);
+
+  *ptr_idle = idle;
+  *ptr_cur_slack = cur_slack;
+  *ptr_delta = delta;
+  *ptr_psiDiffs = psiDiffs;
+  *ptr_dXc = dXc;
+
+  return(new_size_active);
+}
+
+/*int resize_cleanup(int size_active, int **ptr_idle, double **ptr_alpha, double **ptr_delta, DOC ***ptr_dXc, 
 		double ***ptr_G, int *mv_iter) {
   int i,j, new_size_active;
   long k;
@@ -980,7 +1243,7 @@ int resize_cleanup(int size_active, int **ptr_idle, double **ptr_alpha, double *
   while((j<size_active)&&(idle[j]>=IDLE_ITER)) j++;
 
   while (j<size_active) {
-    /* copying */
+    // copying 
     alpha[i] = alpha[j];
     delta[i] = delta[j];
 		free(G[i]);
@@ -1008,7 +1271,7 @@ int resize_cleanup(int size_active, int **ptr_idle, double **ptr_alpha, double *
   dXc = (DOC**)realloc(dXc, sizeof(DOC*)*new_size_active);
   assert(dXc!=NULL);
 
-  /* resize idle */
+  // resize idle 
   i=0;
   while ((i<size_active)&&(idle[i]<IDLE_ITER)) i++;
   j=i;
@@ -1035,7 +1298,7 @@ int resize_cleanup(int size_active, int **ptr_idle, double **ptr_alpha, double *
   *ptr_dXc = dXc;
 
   return(new_size_active);
-}
+}*/
 
 void approximate_to_psd(double **G, int size_active, double eps)
 {
