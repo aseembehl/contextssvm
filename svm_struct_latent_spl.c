@@ -38,7 +38,7 @@
 #define UPDATE_BOUND 3
 #define MAX_CURRICULUM_ITER 10
 
-#define EQUALITY_EPSILON 1e-8
+#define EQUALITY_EPSILON 1e-6
 #define SLACK_EPSILON 1e-8
 
 #define MAX(x,y) ((x) < (y) ? (y) : (x))
@@ -385,11 +385,11 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 			exit(1);
 		}
 
-		/*for(j = 1; j <= (sparm->phi1_size+sparm->phi2_size)*3; j++) {
+		for(j = 1; j <= (sparm->phi1_size+sparm->phi2_size)*3; j++) {
 			if((w[j]<EQUALITY_EPSILON) && (w[j]>(-1*EQUALITY_EPSILON))){
 	   			w[j] = 0;
    			}
-		}*/
+		}
 
 		/*for (j=0;j<size_active;j++) {
 	     	if (cur_slack[j]>ALPHA_THRESHOLD) {
