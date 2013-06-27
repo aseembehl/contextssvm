@@ -108,5 +108,7 @@ typedef struct struct_learn_parm {
           double gram_regularization;
           double pairwise_threshold;
 
+          int solve_dual;
+
 } STRUCT_LEARN_PARM;
 

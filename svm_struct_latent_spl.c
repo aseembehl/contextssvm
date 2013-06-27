@@ -49,6 +49,7 @@
  //int mosek_qp_optimize(double**, double*, double*, long, double, double*, DOC **, int, int);
  //int mosek_qp_optimize(double**,double**, double*, double*, long, long, double, double*, double, double);
 int mosek_qp_optimize(double**, double*, double*, double*, long, double, double*, long, long);
+int mosek_qp_optimize_dual(double**, double**, double*, double*, long, long, double, double*, double, double);
 
 void my_read_input_parameters(int argc, char* argv[], char *trainfile, char *modelfile, 
 			      LEARN_PARM *learn_parm, KERNEL_PARM *kernel_parm, STRUCT_LEARN_PARM *struct_parm, 
@@ -445,7 +446,7 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
   return(primal_obj);
 }
 
-/*void cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double epsilon, SVECTOR **fycache, EXAMPLE *ex, 
+void cutting_plane_algorithm_dual(double *w, long m, int MAX_ITER, double C, double epsilon, SVECTOR **fycache, EXAMPLE *ex, 
 															STRUCTMODEL *sm, STRUCT_LEARN_PARM *sparm, int *valid_examples) {
   long i,j;
   double *alpha;
@@ -574,7 +575,7 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 
 	   	// solve QP to update alpha 
 		//r = mosek_qp_optimize(G, delta, alpha, (long) size_active, C, &cur_obj, dXc, (sparm->phi1_size+sparm->phi2_size)*2, (sparm->phi1_size+sparm->phi2_size));
-		r = mosek_qp_optimize(G, qmatrix, delta, alpha, (long) size_active, (long) (sparm->phi1_size+sparm->phi2_size), C, &cur_obj, 0, 0);
+		r = mosek_qp_optimize_dual(G, qmatrix, delta, alpha, (long) size_active, (long) (sparm->phi1_size+sparm->phi2_size), C, &cur_obj, 0, 0);
 	    
 		if(r >= 1293 && r <= 1296)
 		{
@@ -588,7 +589,7 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 					G[i][i] += 10*sparm->gram_regularization-sparm->gram_regularization;
 				}
 				sparm->gram_regularization *= 10;
-				r = mosek_qp_optimize(G, qmatrix, delta, alpha, (long) size_active, (long) (sparm->phi1_size+sparm->phi2_size), C, &cur_obj, sparm->gram_regularization, sparm->gram_regularization*0.1);
+				r = mosek_qp_optimize_dual(G, qmatrix, delta, alpha, (long) size_active, (long) (sparm->phi1_size+sparm->phi2_size), C, &cur_obj, sparm->gram_regularization, sparm->gram_regularization*0.1);
 			}
 		}
 		else if(r)
@@ -691,7 +692,7 @@ double cutting_plane_algorithm(double *w, long m, int MAX_ITER, double C, double
 
   //return(primal_obj);
   return;
-}*/
+}
 
 int check_acs_convergence(int *prev_valid_examples, int *valid_examples, long m)
 {
@@ -802,7 +803,12 @@ double alternate_convex_search(double *w, long m, int MAX_ITER, double C, double
 		for (i=0;i<sm->sizePsi+1;i++)
 			w[i] = 0.0;
 		
-		cutting_plane_algorithm(w, m, MAX_ITER, C, epsilon, fycache, ex, sm, sparm, valid_examples);
+    if(sparm->solve_dual){
+        cutting_plane_algorithm_dual(w, m, MAX_ITER, C, epsilon, fycache, ex, sm, sparm, valid_examples);
+    }
+    else{
+        cutting_plane_algorithm(w, m, MAX_ITER, C, epsilon, fycache, ex, sm, sparm, valid_examples);
+    }
 		/*relaxed_primal_obj = cutting_plane_algorithm(w, m, MAX_ITER, C, epsilon, fycache, ex, sm, sparm, valid_examples);
 		if(nValid < m)
 			relaxed_primal_obj += (double)(m-nValid)/((double)spl_weight);
@@ -1003,27 +1009,7 @@ int main(int argc, char* argv[]) {
   }
 
  	/* learn initial weight vector using all training examples */
-	valid_examples = (int *) malloc(m*sizeof(int));
-	if (init_spl_weight>0.0) {
-		printf("INITIALIZATION\n"); fflush(stdout);
-		for (i=0;i<m;i++) {
-			valid_examples[i] = 1;
-		}
-		int initIter;
-		for (initIter=0;initIter<2;initIter++) {
-			//primal_obj = cutting_plane_algorithm(w, m, MAX_ITER, C, epsilon, fycache, ex, &sm, &sparm, valid_examples);
-			cutting_plane_algorithm(w, m, MAX_ITER, C, epsilon, fycache, ex, &sm, &sparm, valid_examples);
-		    for (i=0;i<m;i++) {
-		  	    free_svector(fycache[i]);
-		    	fy = psi(ex[i].x, ex[i].y, &sm, &sparm);
-		     	diff = add_list_ss(fy);
-		     	free_svector(fy);
-		     	fy = diff;
-		     	fycache[i] = fy;
-	    	}
-		}
-	}
-     
+	valid_examples = (int *) malloc(m*sizeof(int));     
 
   /* errors for validation set */
 
@@ -1102,6 +1088,7 @@ void my_read_input_parameters(int argc, char *argv[], char *trainfile, char* mod
 	*spl_factor = 1.3;
 
 	struct_parm->gram_regularization = 1E-7;
+  struct_parm->solve_dual = 1;
 
   struct_parm->custom_argc=0;
 
@@ -1118,6 +1105,7 @@ void my_read_input_parameters(int argc, char *argv[], char *trainfile, char* mod
     case 'p': i++; learn_parm->remove_inconsistent=atol(argv[i]); break; 
 		case 'k': i++; *init_spl_weight = atof(argv[i]); break;
 		case 'm': i++; *spl_factor = atof(argv[i]); break;
+    case 'q': i++; struct_parm->solve_dual = atoi(argv[i]); break;
     case '-': strcpy(struct_parm->custom_argv[struct_parm->custom_argc++],argv[i]);i++; strcpy(struct_parm->custom_argv[struct_parm->custom_argc++],argv[i]);break; 
     default: printf("\nUnrecognized option %s!\n\n",argv[i]);
       exit(0);
